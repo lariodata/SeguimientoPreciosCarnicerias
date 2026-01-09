@@ -1,0 +1,27 @@
+# Logs
+logs/
+*.log
+estado_*.txt
+
+# Excel temporales
+~$*.xls*
+*.xlsb
+*.xlsm~
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# Qlik
+*.qvd
+*.qvf
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Entorno virtual
+.venv/
+venv/
+env/
