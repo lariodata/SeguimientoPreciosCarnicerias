@@ -1,19 +1,27 @@
 import pyodbc
 import pandas as pd
 import xlwings as xw
+import os
 import numpy as np
+from datetime import datetime
 import xlwings.constants as xwc
+import sys
 
 # ================================
 #   PARÁMETRO DESDE VBA
 # ================================
-import sys
-
 if len(sys.argv) > 1 and sys.argv[1].isdigit():
     CANTIDAD_SEMANAS = int(sys.argv[1])
 else:
-    CANTIDAD_SEMANAS = 4   # valor por defecto
+    CANTIDAD_SEMANAS = 4   # fallback seguro
 
+
+# ================================
+#   RUTA DEL ARCHIVO DE ESTADO
+# ================================
+estado_path = r"C:\Users\RodrigoMarozzi\OneDrive - RAFAELA ALIMENTOS S.A\Workflow Seguimiento de Precios\00 - Workflow\logs\estado_costos_comerciales.txt"
+estado_dir = os.path.dirname(estado_path)
+os.makedirs(estado_dir, exist_ok=True)
 
 try:
     # ================================
@@ -31,29 +39,47 @@ try:
     #   2. EJECUTAR STORED PROCEDURE
     # ================================
     df = pd.read_sql(
-        "EXEC DW.dbo.SP_L41_Ultimas4Semanas ?",
+        "EXEC SP_CONS_ListarCostosUltimasSemanas ?",
         conn,
         params=[CANTIDAD_SEMANAS]
     )
+
+    if df.empty:
+        raise Exception("El SP no devolvió datos")
 
     # ================================
     #   3. PREPARAR DATOS
     # ================================
     df["FechaSemana_dt"] = pd.to_datetime(df["FechaSemana"], errors="coerce")
 
-    if "UNIDAD_ME" not in df.columns:
-        raise Exception("El SP no devuelve UNIDAD_ME")
+    print("Filas totales:", len(df))
+    print("Artículos únicos:", df["Articulo"].nunique())
 
-    info_por_art = (
-        df[["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "UNIDAD_ME"]]
+    df_ccu = df[
+        [
+            "Articulo",
+            "DESCRI_AR",
+            "GRAN_RUBRO_CDG",
+            "DESCRIPCION_TIPO_ART",
+            "UNIDAD_ME",
+            "FechaSemana_dt",
+            "CostoUnitario",
+        ]
+    ].copy()
+
+    # ================================
+    #   INFO MAESTRA POR ARTÍCULO
+    # ================================
+    info_art = (
+        df_ccu[["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "DESCRIPCION_TIPO_ART","UNIDAD_ME"]]
         .drop_duplicates(subset=["Articulo"])
         .set_index("Articulo")
     )
 
     # ================================
-    #   4. PIVOT POR SEMANA
+    #   4. PIVOT POR SEMANA (CLAVE CORRECTA)
     # ================================
-    df_pivot = df.pivot_table(
+    df_pivot = df_ccu.pivot_table(
         index="Articulo",
         columns="FechaSemana_dt",
         values="CostoUnitario",
@@ -68,11 +94,17 @@ try:
 
     df_pivot = df_pivot.reset_index()
 
-    # Agregar DESCRI_AR y GRAN_RUBRO_CDG
-    df_pivot["DESCRI_AR"] = df_pivot["Articulo"].map(info_por_art["DESCRI_AR"])
-    df_pivot["GRAN_RUBRO_CDG"] = df_pivot["Articulo"].map(info_por_art["GRAN_RUBRO_CDG"])
+    # ================================
+    #   REINCORPORAR ATRIBUTOS
+    # ================================
+    df_pivot["DESCRI_AR"] = df_pivot["Articulo"].map(info_art["DESCRI_AR"])
+    df_pivot["GRAN_RUBRO_CDG"] = df_pivot["Articulo"].map(info_art["GRAN_RUBRO_CDG"])
+    df_pivot["DESCRIPCION_TIPO_ART"] = df_pivot["Articulo"].map(info_art["DESCRIPCION_TIPO_ART"])
+    df_pivot["UNIDAD_ME"] = df_pivot["Articulo"].map(info_art["UNIDAD_ME"])
 
-    # Renombrar columnas fecha → dd-mmm
+    # ================================
+    #   RENOMBRAR COLUMNAS FECHA
+    # ================================
     nuevas_cols = []
     for c in df_pivot.columns:
         if isinstance(c, pd.Timestamp):
@@ -81,13 +113,10 @@ try:
             nuevas_cols.append(c)
     df_pivot.columns = nuevas_cols
 
-    # Agregar UNIDAD_ME
-    df_pivot["UNIDAD_ME"] = df_pivot["Articulo"].map(info_por_art["UNIDAD_ME"])
-
     # ================================
     #   5. VARIACIONES % INTERCALADAS
     # ================================
-    cols_base = {"Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "UNIDAD_ME"}
+    cols_base = {"Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "DESCRIPCION_TIPO_ART", "UNIDAD_ME"}
     columnas_semanas = [c for c in df_pivot.columns if c not in cols_base]
 
     df_pivot[columnas_semanas] = (
@@ -97,7 +126,7 @@ try:
         .round(3)
     )
 
-    nuevo_orden = ["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG"]
+    nuevo_orden = ["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "DESCRIPCION_TIPO_ART"]
 
     for i, col_actual in enumerate(columnas_semanas):
         nuevo_orden.append(col_actual)
@@ -129,7 +158,7 @@ try:
         for c in df_pivot.columns
     ]
 
-    # Reemplazar NaN por vacío (excepto UNIDAD_ME)
+    # NaN → vacío (excepto UNIDAD_ME)
     for col in df_pivot.columns:
         if col != "UNIDAD_ME":
             df_pivot[col] = df_pivot[col].replace({np.nan: ""})
@@ -139,63 +168,53 @@ try:
     # ================================
     app = xw.apps.active
     wb = app.books["WFW_SPC.xlsm"]
-    sht = wb.sheets["Costos Unitarios"]
 
-    sht.clear()
+    if "Costos Unitarios" in [s.name for s in wb.sheets]:
+        sht = wb.sheets["Costos Unitarios"]
+        sht.clear()
+    else:
+        sht = wb.sheets.add("Costos Unitarios")
 
-    # ================================
-    #   ENCABEZADO
-    # ================================
+    # Encabezado
     sht.range("A1").value = "Costos Unitarios"
     sht.range("A2").value = f"Últimas {CANTIDAD_SEMANAS} semanas"
     sht.range("A1:A2").api.Font.Bold = True
 
     sht.range("A3").options(index=False).value = df_pivot
 
-
     rng = sht.range("A3").current_region
-
     last_row = rng.last_cell.row
     last_col = rng.last_cell.column
 
-    # Encabezados
     header_range = sht.range((3, 1), (3, last_col))
-    headers = sht.range((3, 1), (3, last_col)).value
-
     header_range.api.Font.Bold = True
     header_range.api.HorizontalAlignment = xwc.HAlign.xlHAlignCenter
     header_range.api.VerticalAlignment = xwc.VAlign.xlVAlignCenter
 
-    sht.range((3, 1), (last_row, last_col)).api.EntireColumn.AutoFit()
+    sht.range((1, 1), (last_row, last_col)).api.EntireColumn.AutoFit()
 
     # ================================
-    #   7. PINTAR UNIDAD_ME = 1 (celeste)
+    #   7. PINTAR UNIDAD_ME = 1
     # ================================
     headers = sht.range((3, 1), (3, last_col)).value
     headers_norm = [str(h).strip().upper() if h else "" for h in headers]
 
-    if "UNIDAD_ME" not in headers_norm:
-        raise Exception("No se encontró UNIDAD_ME en Excel")
+    if "UNIDAD_ME" in headers_norm:
+        col_unidad = headers_norm.index("UNIDAD_ME") + 1
 
-    col_unidad = headers_norm.index("UNIDAD_ME") + 1
+        sht.range((4, 1), (last_row, last_col)).api.Interior.Pattern = xwc.Constants.xlNone
 
-    # Limpiar colores SOLO datos
-    sht.range((4, 1), (last_row, last_col)).api.Interior.Pattern = xwc.Constants.xlNone
+        color_celeste = 192 + (230 << 8) + (245 << 16)
 
-    # Color celeste
-    color_celeste = 192 + (230 << 8) + (245 << 16)
+        for r in range(4, last_row + 1):
+            try:
+                if int(float(sht.range((r, col_unidad)).value)) == 1:
+                    sht.range((r, 1), (r, 4)).api.Interior.Color = color_celeste
+            except:
+                pass
 
-    for r in range(4, last_row + 1):
-        try:
-            if int(float(sht.range((r, col_unidad)).value)) == 1:
-                sht.range((r, 1), (r, 3)).api.Interior.Color = color_celeste
-        except:
-            pass
-
-    # Ocultar columna UNIDAD_ME
-    sht.range((3, col_unidad), (last_row, col_unidad)).api.EntireColumn.Hidden = True
-
-
+        # Ocultar columna UNIDAD_ME
+        sht.range((3, col_unidad), (last_row, col_unidad)).api.EntireColumn.Hidden = True
 
 
 
@@ -203,18 +222,20 @@ try:
     #   8. PINTAR VARIACIONES % (FILL)
     # ================================
 
-    COLOR_AMARILLO = 255 + (255 << 8) + (153 << 16)
-    COLOR_ROJO     = 255 + (199 << 8) + (206 << 16)
+    COLOR_AMARILLO = 255 + (255 << 8) + (153 << 16)  # #FFFF99
+    COLOR_ROJO     = 255 + (199 << 8) + (206 << 16)  # #FFC7CE
 
+    # Leer headers reales (fila 3)
     headers = sht.range((3, 1), (3, last_col)).value
     headers_norm = [str(h).strip() if h else "" for h in headers]
 
+    # Columnas cuyo encabezado es "%"
     cols_pct = [i + 1 for i, h in enumerate(headers_norm) if h == "%"]
 
     for c in cols_pct:
         for r in range(4, last_row + 1):
             cell = sht.range((r, c)).api
-            txt = str(cell.Text).strip()
+            txt = str(cell.Text).strip()  # lo que se VE en Excel
 
             if txt == "":
                 continue
@@ -229,9 +250,23 @@ try:
                 cell.Interior.Color = COLOR_AMARILLO
             elif val < 0:
                 cell.Interior.Color = COLOR_ROJO
-
+                        
 
     wb.save()
 
+    with open(estado_path, "w") as f:
+        f.write(
+            f"Completado! Costos Unitarios cargados correctamente - "
+            f"{datetime.now():%d/%m/%Y %H:%M:%S}"
+        )
+
 except Exception as e:
+    with open(estado_path, "w") as f:
+        f.write(f"ERROR: {str(e)}")
     print("ERROR:", e)
+
+finally:
+    try:
+        conn.close()
+    except:
+        pass

@@ -24,7 +24,8 @@ else:
 MAPA_HOJAS = {
     126: "Lista Consumo Interno",
     16: "Listas anteriores R",
-    23: "Listas anteriores CML",
+    23: "Listas anteriores ML",
+    17: "Listas anteriores C",
     28: "Listas anteriores May.",
     29: "Listas anteriores HORECA"
 }
@@ -50,7 +51,7 @@ try:
     #   2. EJECUTAR STORED PROCEDURE
     # ================================
     df = pd.read_sql(
-        "EXEC DW.dbo.SP_ListasPrecios_UltimasSemanas ?, ?",
+        "EXEC DW.dbo.SP_CONS_ListarPreciosUltimasSemanas ?, ?",
         conn,
         params=[CANTIDAD_SEMANAS, ID_LISTA]
     )
@@ -62,7 +63,8 @@ try:
         raise Exception("El SP devolvió más de una lista distinta")
 
     id_lista_real = df["id_lista"].iloc[0]
-    nombre_lista = df["lista"].iloc[0]
+    nombre_lista = f"IdLista {id_lista_real}"
+
 
     # ================================
     #   3. PREPARAR DATOS
@@ -73,7 +75,7 @@ try:
         raise Exception("El SP no devuelve UNIDAD_ME")
 
     info_por_art = (
-        df[["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "UNIDAD_ME"]]
+        df[["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "DESCRIPCION_TIPO_ART", "UNIDAD_ME"]]
         .drop_duplicates("Articulo")
         .set_index("Articulo")
     )
@@ -100,6 +102,8 @@ try:
 
     df_pivot["DESCRI_AR"] = df_pivot["Articulo"].map(info_por_art["DESCRI_AR"])
     df_pivot["GRAN_RUBRO_CDG"] = df_pivot["Articulo"].map(info_por_art["GRAN_RUBRO_CDG"])
+    df_pivot["DESCRIPCION_TIPO_ART"] = df_pivot["Articulo"].map(info_por_art["DESCRIPCION_TIPO_ART"])
+    
 
     nuevas_cols = []
     for c in df_pivot.columns:
@@ -114,7 +118,7 @@ try:
     # ================================
     #   5. VARIACIONES % INTERCALADAS
     # ================================
-    cols_base = {"Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "UNIDAD_ME"}
+    cols_base = {"Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "DESCRIPCION_TIPO_ART", "UNIDAD_ME"}
     columnas_semanas = [c for c in df_pivot.columns if c not in cols_base]
 
     df_pivot[columnas_semanas] = (
@@ -123,7 +127,7 @@ try:
         .round(3)
     )
 
-    nuevo_orden = ["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG"]
+    nuevo_orden = ["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "DESCRIPCION_TIPO_ART"]
 
     for i, col_actual in enumerate(columnas_semanas):
         nuevo_orden.append(col_actual)
@@ -212,7 +216,7 @@ try:
         # 👉 CONDICIÓN REAL DE LISTAS
         if "1-UNIT" in txt:
             # pintar solo columnas descriptivas
-            sht.range((r, 1), (r, 3)).api.Interior.Color = color_celeste
+            sht.range((r, 1), (r, 4)).api.Interior.Color = color_celeste
 
     # ================================
     #   8. PINTAR VARIACIONES %

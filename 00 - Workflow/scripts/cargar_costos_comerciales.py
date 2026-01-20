@@ -39,7 +39,7 @@ try:
     #   2. EJECUTAR STORED PROCEDURE
     # ================================
     df = pd.read_sql(
-        "EXEC DW.dbo.SP_L41_Ultimas4Semanas ?",
+        "EXEC SP_CONS_ListarCostosUltimasSemanas ?",
         conn,
         params=[CANTIDAD_SEMANAS]
     )
@@ -48,17 +48,37 @@ try:
     #   3. PREPARAR DATOS
     # ================================
     df["FechaSemana_dt"] = pd.to_datetime(df["FechaSemana"], errors="coerce")
+    print("=== SP ===")
+    print("Filas df:", len(df))
+    print("Artículos únicos df:", df["Articulo"].nunique())
 
     df_ccu = df[
         [
             "Articulo",
             "DESCRI_AR",
             "GRAN_RUBRO_CDG",
+            "DESCRIPCION_TIPO_ART",
             "UNIDAD_ME",
             "FechaSemana_dt",
             "CostoComercialUnitario",
         ]
     ].copy()
+
+
+
+    # ================================
+    #   INFO MAESTRA POR ARTÍCULO
+    # ================================
+    info_art = (
+        df_ccu[["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "DESCRIPCION_TIPO_ART","UNIDAD_ME"]]
+        .drop_duplicates(subset=["Articulo"])
+        .set_index("Articulo")
+    )
+
+
+    print("=== df_ccu ===")
+    print("Filas df_ccu:", len(df_ccu))
+    print("Artículos únicos df_ccu:", df_ccu["Articulo"].nunique())
 
     # Guardar UNIDAD_ME por artículo
     info_unidad = (
@@ -71,7 +91,7 @@ try:
     #   4. PIVOT POR SEMANA (CCU)
     # ================================
     df_pivot = df_ccu.pivot_table(
-        index=["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG"],
+        index=["Articulo", "DESCRI_AR"],
         columns="FechaSemana_dt",
         values="CostoComercialUnitario",
         aggfunc="first"
@@ -85,6 +105,13 @@ try:
 
     df_pivot = df_pivot.reset_index()
 
+    # REINCORPORAR ATRIBUTOS
+    df_pivot["DESCRI_AR"] = df_pivot["Articulo"].map(info_art["DESCRI_AR"])
+    df_pivot["GRAN_RUBRO_CDG"] = df_pivot["Articulo"].map(info_art["GRAN_RUBRO_CDG"])
+    df_pivot["DESCRIPCION_TIPO_ART"] = df_pivot["Articulo"].map(info_art["DESCRIPCION_TIPO_ART"])
+    df_pivot["UNIDAD_ME"] = df_pivot["Articulo"].map(info_art["UNIDAD_ME"])
+
+
     # Renombrar columnas fecha → dd-mmm
     nuevas_cols = []
     for c in df_pivot.columns:
@@ -94,13 +121,12 @@ try:
             nuevas_cols.append(c)
     df_pivot.columns = nuevas_cols
 
-    # Agregar UNIDAD_ME
-    df_pivot["UNIDAD_ME"] = df_pivot["Articulo"].map(info_unidad["UNIDAD_ME"])
+
 
     # ================================
     #   5. VARIACIONES % INTERCALADAS
     # ================================
-    cols_base = {"Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "UNIDAD_ME"}
+    cols_base = {"Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "DESCRIPCION_TIPO_ART", "UNIDAD_ME"}
     columnas_semanas = [c for c in df_pivot.columns if c not in cols_base]
 
     # Convertir a numérico
@@ -111,7 +137,7 @@ try:
         .round(3)
     )
 
-    nuevo_orden = ["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG"]
+    nuevo_orden = ["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "DESCRIPCION_TIPO_ART"]
 
     for i, col_actual in enumerate(columnas_semanas):
         nuevo_orden.append(col_actual)
@@ -206,7 +232,7 @@ try:
     for r in range(4, last_row + 1):
         try:
             if int(float(sht.range((r, col_unidad)).value)) == 1:
-                sht.range((r, 1), (r, 3)).api.Interior.Color = color_celeste
+                sht.range((r, 1), (r, 4)).api.Interior.Color = color_celeste
         except:
             pass
 
