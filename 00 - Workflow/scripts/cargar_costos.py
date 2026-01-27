@@ -250,7 +250,7 @@ try:
                 cell.Interior.Color = COLOR_AMARILLO
             elif val < 0:
                 cell.Interior.Color = COLOR_ROJO
-                        
+                         
 
     wb.save()
 

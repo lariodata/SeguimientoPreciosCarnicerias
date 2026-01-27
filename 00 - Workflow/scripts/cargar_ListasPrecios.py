@@ -13,10 +13,11 @@ if len(sys.argv) > 1 and sys.argv[1].isdigit():
 else:
     CANTIDAD_SEMANAS = 4
 
-if len(sys.argv) > 2 and sys.argv[2].isdigit():
-    ID_LISTA = int(sys.argv[2])
+if len(sys.argv) > 2 and sys.argv[2].isdigit():    
+    ID_LISTA = int(sys.argv[2])    
 else:
-    raise Exception("Debe enviarse IdLista como segundo parámetro")
+    ID_LISTA = 16   # fallback por defecto
+    print("⚠️ ID_LISTA no recibido, se usa valor por defecto: 16")
 
 # ================================
 #   MAPEO ID_LISTA → HOJA EXCEL
@@ -55,6 +56,8 @@ try:
         conn,
         params=[CANTIDAD_SEMANAS, ID_LISTA]
     )
+
+
 
     if df.empty:
         raise Exception("El SP no devolvió datos")
