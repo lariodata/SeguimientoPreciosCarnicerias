@@ -6,6 +6,7 @@ import numpy as np
 from datetime import datetime
 import xlwings.constants as xwc
 import sys
+from pathlib import Path
 
 # ================================
 #   PARÁMETRO DESDE VBA
@@ -19,9 +20,14 @@ else:
 # ================================
 #   RUTA DEL ARCHIVO DE ESTADO
 # ================================
-estado_path = r"C:\Users\RodrigoMarozzi\OneDrive - RAFAELA ALIMENTOS S.A\Workflow Seguimiento de Precios\00 - Workflow\logs\estado_costos_comerciales.txt"
-estado_dir = os.path.dirname(estado_path)
-os.makedirs(estado_dir, exist_ok=True)
+
+BASE_DIR = Path(__file__).resolve().parent          # ...\scripts
+APP_DIR = BASE_DIR.parent                           # C:\Apps\Seguimiento de Precios
+
+estado_dir = APP_DIR / "logs"
+estado_dir.mkdir(parents=True, exist_ok=True)
+
+estado_path = estado_dir / "estado_costos_comerciales.txt"
 
 try:
     # ================================
@@ -134,8 +140,11 @@ try:
         df_pivot[columnas_semanas]
         .replace("", np.nan)
         .apply(pd.to_numeric, errors="coerce")
-        .round(3)
+        .round(0)
     )
+
+
+
 
     nuevo_orden = ["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "DESCRIPCION_TIPO_ART"]
 

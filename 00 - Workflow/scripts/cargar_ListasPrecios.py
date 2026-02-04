@@ -4,6 +4,7 @@ import xlwings as xw
 import numpy as np
 import xlwings.constants as xwc
 import sys
+from pathlib import Path
 
 # ================================
 #   PARÁMETROS DESDE VBA
@@ -18,6 +19,19 @@ if len(sys.argv) > 2 and sys.argv[2].isdigit():
 else:
     ID_LISTA = 16   # fallback por defecto
     print("⚠️ ID_LISTA no recibido, se usa valor por defecto: 16")
+
+
+# ================================
+#   RUTA DEL ARCHIVO DE ESTADO
+# ================================
+
+BASE_DIR = Path(__file__).resolve().parent          # ...\scripts
+APP_DIR = BASE_DIR.parent                           # C:\Apps\Seguimiento de Precios
+
+estado_dir = APP_DIR / "logs"
+estado_dir.mkdir(parents=True, exist_ok=True)
+
+estado_path = estado_dir / "estado_ListasPrecios.txt"    
 
 # ================================
 #   MAPEO ID_LISTA → HOJA EXCEL
@@ -127,7 +141,8 @@ try:
     df_pivot[columnas_semanas] = (
         df_pivot[columnas_semanas]
         .apply(pd.to_numeric, errors="coerce")
-        .round(3)
+        .round(0)
+        .astype("Int64")
     )
 
     nuevo_orden = ["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "DESCRIPCION_TIPO_ART"]

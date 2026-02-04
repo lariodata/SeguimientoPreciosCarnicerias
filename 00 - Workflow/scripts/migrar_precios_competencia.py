@@ -4,17 +4,20 @@ import pyodbc
 import shutil
 import os
 from datetime import datetime
-
-
+from pathlib import Path
+import sys
 
 # ================================
-# PARÁMETRO DESDE VBA / TEST MANUAL
+#   ARCHIVO EXCEL RECIBIDO DESDE VBA
 # ================================
-if len(sys.argv) >= 2:
-    archivo_excel = sys.argv[1]
-else:
-    # 🔧 RUTA FIJA PARA TEST MANUAL
-    archivo_excel = r"C:\Users\RodrigoMarozzi\OneDrive - RAFAELA ALIMENTOS S.A\Workflow Seguimiento de Precios\00 - Workflow\Template_Competencias.xlsx"
+
+if len(sys.argv) < 2:
+    raise ValueError("No se recibió la ruta del archivo Excel desde VBA")
+
+archivo_excel = Path(sys.argv[1]).resolve()
+
+if not archivo_excel.exists():
+    raise FileNotFoundError(f"No existe el archivo Excel: {archivo_excel}")
 
 print("📂 Archivo de competencias:", archivo_excel)
 
@@ -127,10 +130,12 @@ try:
                 precio = None
             else:
                 try:
-                    # Reemplaza coma por punto si viene como texto
                     precio = float(str(valor).replace(",", "."))
-                except ValueError:
+                    if precio == 0:
+                        precio = None
+                except (ValueError, TypeError):
                     precio = None
+
 
 
             inserts.append((

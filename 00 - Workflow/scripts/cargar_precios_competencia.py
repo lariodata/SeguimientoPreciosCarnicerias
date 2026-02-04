@@ -4,10 +4,24 @@ import xlwings as xw
 import numpy as np
 from datetime import datetime
 import xlwings.constants as xwc
+from pathlib import Path
+
+# ================================
+#   RUTAS DEL PROYECTO / LOGS
+# ================================
+
+SCRIPT_DIR = Path(__file__).resolve().parent          # ...\scripts
+PROJECT_DIR = SCRIPT_DIR.parent                      # C:\Apps\Seguimiento de Precios
+
+logs_dir = PROJECT_DIR / "logs"
+logs_dir.mkdir(exist_ok=True)
+
+estado_path = logs_dir / "estado_Competencias.txt"
 
 # ================================
 # PALETA DE COLORES PASTEL (RGB Excel)
 # ================================
+
 PALETA_COLORES = [
     255 + (242 << 8) + (204 << 16),  # Amarillo pastel
     217 + (234 << 8) + (211 << 16),  # Verde pastel
@@ -20,6 +34,7 @@ PALETA_COLORES = [
 # ================================
 # 1. CONEXIÓN SQL SERVER
 # ================================
+
 conn = pyodbc.connect(
     "Driver={SQL Server};"
     "Server=lariosql70;"
@@ -31,7 +46,6 @@ conn = pyodbc.connect(
 try:
     # ================================
     # 2. EJECUTAR STORED PROCEDURE
-    #    (SIEMPRE ÚLTIMA SEMANA)
     # ================================
     df = pd.read_sql(
         "EXEC dbo.SP_CONS_ListarPreciosCompetenciaSemanal 1",
@@ -51,9 +65,7 @@ try:
         "DESCRIPCION_TIPO_ART"
     ]
 
-    df_comp = df[
-        columnas_fijas + ["cluster", "competencia", "precio"]
-    ].copy()
+    df_comp = df[columnas_fijas + ["cluster", "competencia", "precio"]].copy()
 
     # ================================
     # 4. ORDEN CLUSTER → COMPETENCIA
@@ -92,9 +104,7 @@ try:
     # 7. REINCORPORAR COLUMNAS FIJAS
     # ================================
     df_pivot["DESCRI_AR"] = df_pivot["cod_art"].map(info_art["DESCRI_AR"])
-    df_pivot["GRAN_RUBRO_CDG"] = df_pivot["GRAN_RUBRO_CDG"] = (
-        df_pivot["cod_art"].map(info_art["GRAN_RUBRO_CDG"])
-    )
+    df_pivot["GRAN_RUBRO_CDG"] = df_pivot["cod_art"].map(info_art["GRAN_RUBRO_CDG"])
     df_pivot["DESCRIPCION_TIPO_ART"] = (
         df_pivot["cod_art"].map(info_art["DESCRIPCION_TIPO_ART"])
     )
@@ -125,48 +135,14 @@ try:
     sht.range("A1").api.Font.Bold = True
 
     # ================================
-    # 10. FILA 4 → CLUSTERS (E en adelante)
+    # 10. FILA 4 → CLUSTERS
     # ================================
-    col_ini = len(columnas_fijas) + 1  # E
+    col_ini = len(columnas_fijas) + 1
     i = 0
     col = col_ini
-
-    while i < len(clusters):
-        j = i
-        while j < len(clusters) and clusters[j] == clusters[i]:
-            j += 1
-
-        sht.range((4, col)).value = clusters[i]
-        sht.range((4, col)).api.Font.Bold = True
-        sht.range((4, col)).api.HorizontalAlignment = xwc.HAlign.xlHAlignCenter
-
-        if j - i > 1:
-            sht.range((4, col), (4, col + (j - i) - 1)).api.Merge()
-
-        col += (j - i)
-        i = j
-
-    # ================================
-    # 11. FILA 5 → ENCABEZADOS REALES
-    # ================================
-    encabezados = columnas_fijas + competencias
-
-    sht.range("A5").value = encabezados
-    sht.range("A5").api.Font.Bold = True
-    sht.range("A5").api.HorizontalAlignment = xwc.HAlign.xlHAlignCenter
-
-    # ================================
-    # 12. DATOS DESDE FILA 6
-    # ================================
-    sht.range("A5").options(index=False).value = df_pivot
 
     from itertools import cycle
-
     paleta = cycle(PALETA_COLORES)
-
-    col_ini = len(columnas_fijas) + 1  # columna E
-    i = 0
-    col = col_ini
 
     while i < len(clusters):
         j = i
@@ -178,76 +154,65 @@ try:
         col_inicio = col
         col_fin = col + (j - i) - 1
 
-        # ---------
-        # FILA 4: CLUSTER
-        # ---------
+        sht.range((4, col_inicio), (4, col_fin)).api.Merge()
         sht.range((4, col_inicio)).value = clusters[i]
         sht.range((4, col_inicio)).api.Font.Bold = True
         sht.range((4, col_inicio)).api.HorizontalAlignment = xwc.HAlign.xlHAlignCenter
-        sht.range((4, col_inicio)).api.Interior.Color = color
+        sht.range((4, col_inicio), (4, col_fin)).api.Interior.Color = color
 
-        if col_fin > col_inicio:
-            sht.range((4, col_inicio), (4, col_fin)).api.Merge()
-            sht.range((4, col_inicio), (4, col_fin)).api.Interior.Color = color
-
-        # ---------
-        # FILA 5: COMPETENCIAS
-        # ---------
         sht.range((5, col_inicio), (5, col_fin)).api.Interior.Color = color
 
-        # ---------
-        # BORDES (cluster + competencias)
-        # ---------
         bloque = sht.range((4, col_inicio), (5, col_fin)).api
-
         for borde in [
             xwc.BordersIndex.xlEdgeLeft,
             xwc.BordersIndex.xlEdgeRight,
             xwc.BordersIndex.xlEdgeTop,
             xwc.BordersIndex.xlEdgeBottom
         ]:
-            bloque.Borders(borde).LineStyle = 1  # xlContinuous
-            bloque.Borders(borde).Weight = 2     # xlThin
+            bloque.Borders(borde).LineStyle = 1
+            bloque.Borders(borde).Weight = 2
 
         col += (j - i)
         i = j
 
     # ================================
-    # COLOR GRIS PARA COLUMNAS FIJAS (ENCABEZADOS)
+    # 11. ENCABEZADOS Y DATOS
     # ================================
-    GRIS_CLARO = 242 + (242 << 8) + (242 << 16)
+    sht.range("A5").value = columnas_fijas + competencias
+    sht.range("A5").api.Font.Bold = True
+    sht.range("A5").api.HorizontalAlignment = xwc.HAlign.xlHAlignCenter
 
-    for col in range(1, len(columnas_fijas) + 1):
-        celda = sht.range((5, col)).api
-        celda.Interior.Color = GRIS_CLARO
-        celda.Font.Color = 0  # negro
-        celda.Font.Bold = True
-
-        # borde fino
-        for borde in [
-            xwc.BordersIndex.xlEdgeLeft,
-            xwc.BordersIndex.xlEdgeRight,
-            xwc.BordersIndex.xlEdgeTop,
-            xwc.BordersIndex.xlEdgeBottom
-        ]:
-            celda.Borders(borde).LineStyle = 1  # xlContinuous
-            celda.Borders(borde).Weight = 2     # xlThin
-
+    sht.range("A6").options(index=False, header=False).value = df_pivot
 
 
     # ================================
-    # 13. AJUSTES FINALES
+    # 12. FORMATO MONEDA
     # ================================
+    ultima_fila = sht.range("A5").current_region.last_cell.row
+    ultima_col = sht.range("A5").current_region.last_cell.column
+
+    for c in range(col_ini, ultima_col + 1):
+        sht.range((6, c), (ultima_fila, c)).api.NumberFormat = "$ #.##0"
+
     sht.range("A5").current_region.api.EntireColumn.AutoFit()
 
     wb.save()
 
-    print(
-        f"Competencias actualizadas correctamente - "
-        f"{datetime.now():%d/%m/%Y %H:%M:%S}"
-    )
+    # ================================
+    # ESTADO OK
+    # ================================
+    with open(estado_path, "w") as f:
+        f.write(
+            f"OK - Competencias actualizadas correctamente - "
+            f"{datetime.now():%d/%m/%Y %H:%M:%S}"
+        )
 
 except Exception as e:
+    with open(estado_path, "w") as f:
+        f.write(
+            f"ERROR - {str(e)} - "
+            f"{datetime.now():%d/%m/%Y %H:%M:%S}"
+        )
     print("ERROR:", e)
     raise
 
