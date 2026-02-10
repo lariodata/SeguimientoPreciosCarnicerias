@@ -8,7 +8,7 @@ import smtplib
 from email.message import EmailMessage
 
 # =====================================================
-# CONFIGURACIÓN GENERAL
+# CONFIGURACIÓN GENERAL / RUTAS
 # =====================================================
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = SCRIPT_DIR.parent
@@ -16,27 +16,17 @@ PROJECT_DIR = SCRIPT_DIR.parent
 EXCEL_NAME = "WFW_SPC.xlsm"
 EXCEL_PATH = PROJECT_DIR / EXCEL_NAME
 
-TEMP_DIR = PROJECT_DIR / "temp_ventas"
+TEMP_DIR = PROJECT_DIR / "temp"
 TEMP_DIR.mkdir(exist_ok=True)
 
 SHEET_CLUSTERS = "Clusters"
-SHEET_PARAM = "Parametros"
-SHEET_VENTAS = "Ventas"
+SHEET_PARAMETROS = "Parametros"
 
 SMTP_SERVER = "10.10.11.240"
-SMTP_PORT = 20025
-
-RUBROS_VALIDOS = ["Carnes", "Fiambres", "Dira"]
-
-FECHA_ARCH = datetime.now().strftime("%d %B %Y")
-FECHA_ARCH = FECHA_ARCH.replace("January","Enero").replace("February","Febrero") \
-    .replace("March","Marzo").replace("April","Abril").replace("May","Mayo") \
-    .replace("June","Junio").replace("July","Julio").replace("August","Agosto") \
-    .replace("September","Septiembre").replace("October","Octubre") \
-    .replace("November","Noviembre").replace("December","Diciembre")
+SMTP_PORT = 20025  # sin SSL
 
 # =====================================================
-# HELPERS
+# HELPERS (IGUAL QUE CARNICERÍAS)
 # =====================================================
 def clean_str(v):
     if v is None:
@@ -51,33 +41,46 @@ def split_emails(s):
     partes = re.split(r"[;,]", s)
     return [e.strip() for e in partes if e.strip()]
 
-def safe_filename(text):
-    text = str(text).strip()
-    text = re.sub(r'[\\/:*?"<>|]', "_", text)
-    return text
-
 def get_or_open_workbook(app, name, path):
     try:
         return app.books[name]
     except Exception:
         return app.books.open(str(path))
 
+def safe_filename(text):
+    text = str(text).strip()
+    text = re.sub(r'[\\/:*?"<>|]', "_", text)
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+def norm_key(s):
+    return re.sub(r"\s+", " ", str(s)).strip().lower() if s else ""
+
+def find_col(df, candidates):
+    lookup = {norm_key(c): c for c in df.columns}
+    for cand in candidates:
+        if norm_key(cand) in lookup:
+            return lookup[norm_key(cand)]
+    return None
+
 # =====================================================
 # CONECTAR A EXCEL
 # =====================================================
-try:
-    app = xw.apps.active
-except Exception:
-    app = xw.App(visible=False)
+# try:
+#     app = xw.apps.active
+# except Exception:
+#     app = xw.App(visible=False)
 
-wb = get_or_open_workbook(app, EXCEL_NAME, EXCEL_PATH)
+# wb = get_or_open_workbook(ap
+app = xw.apps.active
+wb = app.books[EXCEL_NAME]
+
 
 sht_clusters = wb.sheets[SHEET_CLUSTERS]
-sht_param = wb.sheets[SHEET_PARAM]
-sht_ventas = wb.sheets[SHEET_VENTAS]
+sht_param = wb.sheets[SHEET_PARAMETROS]
 
 # =====================================================
-# LEER PARÁMETROS MAIL (B14–B18)
+# LEER PARÁMETROS MAIL (VENTAS)
 # =====================================================
 MAIL_FROM = clean_str(sht_param.range("B14").value)
 MAIL_TO   = split_emails(sht_param.range("B15").value)
@@ -86,17 +89,7 @@ ASUNTO    = clean_str(sht_param.range("B17").value)
 CUERPO    = clean_str(sht_param.range("B18").value)
 
 # =====================================================
-# TEXTO A1 POR CLUSTER (HOJA VENTAS)
-# =====================================================
-A1_POR_CLUSTER = {
-    "Casilda": sht_ventas.range("B19").value,
-    "Rafaela": sht_ventas.range("B20").value,
-    "Maria Luisa": sht_ventas.range("B21").value,
-    "Horeca": sht_ventas.range("B22").value,
-}
-
-# =====================================================
-# DETECTAR CLUSTERS (FILA 2)
+# DETECTAR CLUSTERS (IGUAL QUE CARNICERÍAS)
 # =====================================================
 fila_cluster = 2
 ultima_col = sht_clusters.used_range.last_cell.column
@@ -113,7 +106,7 @@ while col <= ultima_col:
             col_fin = c
             c += 1
         clusters.append({
-            "nombre": str(val).replace("CLUSTER","").strip(),
+            "nombre": str(val).replace("CLUSTER", "").strip(),
             "col_inicio": col_inicio,
             "col_fin": col_fin
         })
@@ -122,88 +115,154 @@ while col <= ultima_col:
         col += 1
 
 # =====================================================
-# FUNCIÓN EXPORTAR EXCEL VENTAS
+# LECTURA TABLAS (IGUAL QUE CARNICERÍAS)
 # =====================================================
-def exportar_excel_ventas(df, path_excel, texto_a1):
-    app_tmp = xw.App(visible=False)
-    app_tmp.api.DisplayAlerts = False
-    wb_tmp = app_tmp.books.add()
-    sht = wb_tmp.sheets[0]
+def buscar_fila_encabezado(sht, col_inicio, max_filas=300):
+    for fila in range(1, max_filas):
+        val = sht.range((fila, col_inicio)).value
+        if val and "rubro" in norm_key(val):
+            return fila
+    return None
 
-    # A1
-    sht.range("A1").value = texto_a1
-
-    # Datos desde fila 2
-    sht.range("A2").options(index=False, header=False).value = df
-
-    last_row = 1 + len(df)
-
-    # Formato columna B (precio)
-    sht.range((2,2),(last_row,2)).api.NumberFormat = "#.##0,00"
-
-    # Formato columna C (0,00)
-    sht.range((2,3),(last_row,3)).api.NumberFormat = "0,00"
-
-    # Fecha fija columna D
-    sht.range((2,4),(last_row,4)).api.NumberFormat = "dd/mm/yyyy"
-
-    sht.autofit()
-    wb_tmp.save(str(path_excel))
-    wb_tmp.close()
-    app_tmp.quit()
-
-# =====================================================
-# PROCESO PRINCIPAL
-# =====================================================
-adjuntos = []
-
-for c in clusters:
-    # Leer tabla completa del cluster
-    rango = sht_clusters.range(
-        (fila_cluster + 1, c["col_inicio"]),
-        (sht_clusters.used_range.last_cell.row, c["col_fin"])
+def leer_tabla_cluster(sht, col_inicio, col_fin, fila_header):
+    rango = sht.range(
+        (fila_header, col_inicio),
+        (sht.used_range.last_cell.row, col_fin)
     )
+    df = rango.options(pd.DataFrame, header=1, index=False).value
+    return df.dropna(how="all")
 
-    df = rango.options(pd.DataFrame, header=False, index=False).value
-    df = df.dropna(how="all")
+# =====================================================
+# EXPORTAR EXCEL – VENTAS
+# =====================================================
+def exportar_excel_ventas_xlwings(df, base_path_excel, nombre_cluster):
+    RUBROS = {
+        "Carnes": "CARNES",
+        "Fiambres": "FIAMBRES",
+        "Dira": "DIRA"
+    }
 
-    if df.empty:
-        continue
+    A1_POR_CLUSTER = {
+        "CASILDA": "PubCAS",
+        "RAFAELA": "PubRAF",
+        "MARIA LUISA": "PUBMAR",
+        "MAYORISTAS": "MayRet",
+        "HORECA": "MHOR"
+    }
 
-    # Columnas esperadas:
-    # 0 Rubro | 1 Código | 2 Precio
-    df.columns = ["Rubro", "Codigo", "Precio"]
+    CLUSTERS_SIN_IVA = {"MAYORISTAS", "HORECA"}
 
-    # Limpiar rubro
-    df["Rubro"] = df["Rubro"].astype(str).str.strip()
-    df = df[df["Rubro"].isin(RUBROS_VALIDOS)]
 
-    if df.empty:
-        continue
+    col_rubro  = find_col(df, ["Rubro"])
+    col_codigo = find_col(df, ["Cód.", "Cód", "Cod", "Código", "COD_ART"])
+    cluster_norm = nombre_cluster.upper().replace("CLUSTER", "").strip()
+    if cluster_norm in CLUSTERS_SIN_IVA:
+        col_precio = find_col(df, ["sin iva", "SIN IVA", "SIN_IVA"])
+    else:
+        col_precio = find_col(df, ["$", "Precio", "PRECIO"])
 
-    for rubro in RUBROS_VALIDOS:
-        df_r = df[df["Rubro"] == rubro].copy()
+
+    if not col_rubro or not col_codigo or not col_precio:
+        return []
+
+
+    df[col_rubro] = df[col_rubro].astype(str).str.upper().str.strip()
+
+    archivos_generados = []
+
+    for nombre_rubro, rubro in RUBROS.items():
+        df_r = df[df[col_rubro] == rubro].copy()
+        if df_r.empty:
+            continue
+
+        # precio numérico + filtro != 0
+        df_r[col_precio] = pd.to_numeric(df_r[col_precio], errors="coerce")
+        df_r = df_r[df_r[col_precio].notna() & (df_r[col_precio] != 0)]
         if df_r.empty:
             continue
 
         df_out = pd.DataFrame({
-            "Codigo": df_r["Codigo"],
-            "Precio": pd.to_numeric(df_r["Precio"], errors="coerce"),
+            "Codigo": df_r[col_codigo],
+            "Precio": df_r[col_precio],
             "Cero": 0.00,
-            "Fecha": pd.to_datetime("2019-01-01")
+            "Fecha": datetime(2019, 1, 1)
         })
 
-        nombre_arch = f"{FECHA_ARCH} - {c['nombre']} {rubro}.xlsx"
-        path_excel = TEMP_DIR / safe_filename(nombre_arch)
+        # ===== NUEVO EXCEL POR RUBRO =====
+        app_tmp = xw.App(visible=False)
+        app_tmp.api.DisplayAlerts = False
+        wb_tmp = app_tmp.books.add()
+        sht = wb_tmp.sheets[0]
+        sht.name = nombre_rubro
 
-        texto_a1 = A1_POR_CLUSTER.get(c["nombre"], "")
-        exportar_excel_ventas(df_out, path_excel, texto_a1)
+        cluster_norm = nombre_cluster.upper().replace("CLUSTER", "").strip()
+        sht.range("A1").value = A1_POR_CLUSTER.get(cluster_norm, "")
 
+        sht.range("A2").options(index=False, header=False).value = df_out
+
+        last_row = 1 + len(df_out)
+        if last_row >= 2:
+            sht.range((2, 2), (last_row, 2)).api.NumberFormat = "#.##0,00"
+            sht.range((2, 3), (last_row, 3)).api.NumberFormat = "0,00"
+            sht.range((2, 4), (last_row, 4)).api.NumberFormat = "dd/mm/yyyy"
+
+        sht.autofit()
+
+        path_excel = base_path_excel.with_name(
+            f"{base_path_excel.stem}_{nombre_rubro}{base_path_excel.suffix}"
+        )
+
+        if path_excel.exists():
+            path_excel.unlink()
+
+        wb_tmp.save(str(path_excel))
+        wb_tmp.close()
+        app_tmp.quit()
+
+        archivos_generados.append(path_excel)
+
+    return archivos_generados
+
+
+# =====================================================
+# PROCESO PRINCIPAL
+# =====================================================
+fecha_arch = datetime.now().strftime("%d-%m-%Y")
+adjuntos = []
+
+for c in clusters:
+    fila_header = buscar_fila_encabezado(sht_clusters, c["col_inicio"])
+    if not fila_header:
+        continue
+
+    df_cluster = leer_tabla_cluster(
+        sht_clusters,
+        c["col_inicio"],
+        c["col_fin"],
+        fila_header
+    )
+
+    if df_cluster.empty:
+        continue
+
+    nombre_limpio = safe_filename(c["nombre"])
+    path_excel = TEMP_DIR / f"Ventas_{nombre_limpio}_{fecha_arch}.xlsx"
+
+    exportar_excel_ventas_xlwings(df_cluster, path_excel, nombre_limpio)
+
+    if path_excel.exists():
         adjuntos.append(path_excel)
 
 # =====================================================
-# ENVÍO DE CORREO (UN SOLO MAIL)
+# ENVÍO DE UN SOLO MAIL
 # =====================================================
+fecha_hoy = datetime.now().strftime("%d-%m-%Y")
+
+adjuntos = [
+    p for p in TEMP_DIR.glob("Ventas_*.xlsx")
+    if fecha_hoy in p.name
+]
+
 if MAIL_TO and adjuntos:
     msg = EmailMessage()
     msg["From"] = MAIL_FROM
@@ -214,6 +273,8 @@ if MAIL_TO and adjuntos:
     msg["Subject"] = ASUNTO or "Precios de Venta"
     msg.set_content(CUERPO)
 
+    destinatarios = MAIL_TO + MAIL_CC
+
     for path in adjuntos:
         with open(path, "rb") as f:
             msg.add_attachment(
@@ -223,5 +284,5 @@ if MAIL_TO and adjuntos:
                 filename=path.name
             )
 
-    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=15) as server:
-        server.send_message(msg)
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
+        server.send_message(msg, to_addrs=destinatarios)

@@ -247,12 +247,20 @@ for c in clusters:
         msg.set_content(CUERPO)
 
         with open(path_excel, "rb") as f:
-            msg.add_attachment(
-                f.read(),
-                maintype="application",
-                subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                filename=path_excel.name
-            )
+             msg.add_attachment(
+                 f.read(),
+                 maintype="application",
+                 subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                 filename=path_excel.name
+             )
+
+        destinatarios = MAIL_TO + MAIL_CC
 
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
-            server.send_message(msg)
+            server.send_message(
+                msg,
+                from_addr=MAIL_FROM,
+                to_addrs=destinatarios
+            )
+            server.quit()
+
