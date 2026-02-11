@@ -142,7 +142,6 @@ try:
         df_pivot[columnas_semanas]
         .apply(pd.to_numeric, errors="coerce")
         .round(0)
-        .astype("Int64")
     )
 
     nuevo_orden = ["Articulo", "DESCRI_AR", "GRAN_RUBRO_CDG", "DESCRIPCION_TIPO_ART"]
@@ -178,6 +177,8 @@ try:
     for col in df_pivot.columns:
         if col != "UNIDAD_ME":
             df_pivot[col] = df_pivot[col].replace({np.nan: ""})
+            
+
 
     # ================================
     #   6. ESCRIBIR EN EXCEL

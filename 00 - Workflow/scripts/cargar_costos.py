@@ -11,6 +11,7 @@ from pathlib import Path
 # ================================
 #   PARÁMETRO DESDE VBA
 # ================================
+
 if len(sys.argv) > 1 and sys.argv[1].isdigit():
     CANTIDAD_SEMANAS = int(sys.argv[1])
 else:
