@@ -25,3 +25,7 @@ Thumbs.db
 .venv/
 venv/
 env/
+
+# Carpeta Temp
+temp/
+00 - Workflow/temp/
