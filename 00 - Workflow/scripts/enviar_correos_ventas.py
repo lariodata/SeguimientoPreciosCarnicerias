@@ -6,10 +6,16 @@ import pandas as pd
 import xlwings as xw
 import smtplib
 from email.message import EmailMessage
+from pathlib import Path
+from dotenv import load_dotenv
 
 # =====================================================
 # CONFIGURACIÓN GENERAL / RUTAS
 # =====================================================
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = SCRIPT_DIR.parent
 
@@ -24,6 +30,26 @@ SHEET_PARAMETROS = "Parametros"
 
 SMTP_SERVER = "10.10.11.240"
 SMTP_PORT = 20025  # sin SSL
+
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.office365.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER")          # Aplicaciones@rafalim.com
+SMTP_PASS = os.getenv("SMTP_PASS")          # (password)
+
+if not SMTP_USER or not SMTP_PASS:
+    raise RuntimeError("❌ SMTP_USER / SMTP_PASS no configurados (revisar .env)")
+
+# =====================================================
+# HELPERS
+# =====================================================
+
+def enviar_mail_o365(msg, from_addr, to_addrs):
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=20) as server:
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+        server.login(SMTP_USER, SMTP_PASS)
+        server.send_message(msg, from_addr=from_addr, to_addrs=to_addrs)
 
 # =====================================================
 # HELPERS (IGUAL QUE CARNICERÍAS)
@@ -82,7 +108,7 @@ sht_param = wb.sheets[SHEET_PARAMETROS]
 # =====================================================
 # LEER PARÁMETROS MAIL (VENTAS)
 # =====================================================
-MAIL_FROM = clean_str(sht_param.range("B14").value)
+MAIL_FROM = SMTP_USER
 MAIL_TO   = split_emails(sht_param.range("B15").value)
 MAIL_CC   = split_emails(sht_param.range("B16").value)
 ASUNTO    = clean_str(sht_param.range("B17").value)
@@ -284,5 +310,8 @@ if MAIL_TO and adjuntos:
                 filename=path.name
             )
 
-    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
-        server.send_message(msg, to_addrs=destinatarios)
+    try:
+        enviar_mail_o365(msg, MAIL_FROM, destinatarios)
+        print(f"✅ Mail enviado OK → {', '.join(destinatarios)}")
+    except Exception as e:
+        print(f"❌ Error enviando mail ({nombre_limpio}): {e}")
