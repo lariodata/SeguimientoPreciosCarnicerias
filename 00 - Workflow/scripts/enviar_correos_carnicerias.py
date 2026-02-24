@@ -9,6 +9,22 @@ from email.message import EmailMessage
 from pathlib import Path
 from dotenv import load_dotenv
 
+import sys
+
+# =====================================================
+# RECIBIR FECHA DESDE VBA (YYYY-MM-DD)
+# =====================================================
+if len(sys.argv) < 2:
+    raise ValueError("❌ No se recibió la fecha desde Excel (se esperaba YYYY-MM-DD).")
+
+try:
+    FECHA_PROCESO = datetime.strptime(sys.argv[1], "%Y-%m-%d")
+except ValueError:
+    raise ValueError("❌ Formato de fecha inválido. Se esperaba YYYY-MM-DD (ej: 2026-02-14).")
+
+fecha_arch = FECHA_PROCESO.strftime("%d-%m-%Y")   # para nombre archivo
+fecha_excel_str = FECHA_PROCESO.strftime("%d-%b").lower()  # para E2
+
 
 # =====================================================
 # CONFIGURACIÓN GENERAL / RUTAS
@@ -161,7 +177,7 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
     wb_tmp = app_tmp.books.add()
 
     tabs = {"Carnes": "Carnes", "Fiambres": "Fiambres", "Reventa": "Dira"}
-    fecha_hoy = datetime.now().strftime("%d-%b").lower()
+    fecha_hoy = fecha_excel_str
 
     COLOR_CELESTE = 192 + (230 << 8) + (245 << 16)
     COLOR_ROJO_FONT = 255
@@ -234,9 +250,10 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
     app_tmp.quit()
 
 # =====================================================
-# PROCESO PRINCIPAL + ENVÍO MAIL
+# PROCESO PRINCIPAL
 # =====================================================
-fecha_arch = datetime.now().strftime("%Y-%m-%d")
+
+adjuntos = []
 
 for c in clusters:
     fila_header = buscar_fila_encabezado(sht_clusters, c["col_inicio"])
@@ -258,31 +275,39 @@ for c in clusters:
 
     exportar_excel_precios_xlwings(df_cluster, path_excel, nombre_limpio)
 
-    if MAIL_TO:
-        msg = EmailMessage()
-        msg["From"] = MAIL_FROM
-        msg["To"] = ", ".join(MAIL_TO)
-        if MAIL_CC:
-            msg["Cc"] = ", ".join(MAIL_CC)
+    if path_excel.exists():
+        adjuntos.append(path_excel)
 
-        msg["Subject"] = f"{ASUNTO} - {nombre_limpio}" if ASUNTO else f"Precios - {nombre_limpio}"
-        msg.set_content(CUERPO)
 
+# ==========================================
+# ENVÍO DE UN SOLO MAIL (FUERA DEL FOR)
+# ==========================================
+
+if MAIL_TO and adjuntos:
+    msg = EmailMessage()
+    msg["From"] = MAIL_FROM
+    msg["To"] = ", ".join(MAIL_TO)
+
+    if MAIL_CC:
+        msg["Cc"] = ", ".join(MAIL_CC)
+
+    msg["Subject"] = f"{ASUNTO} - {FECHA_PROCESO.strftime('%d/%m/%Y')}"
+
+    msg.set_content(CUERPO)
+
+    destinatarios = MAIL_TO + MAIL_CC
+
+    for path_excel in adjuntos:
         with open(path_excel, "rb") as f:
-             msg.add_attachment(
-                 f.read(),
-                 maintype="application",
-                 subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                 filename=path_excel.name
-             )
+            msg.add_attachment(
+                f.read(),
+                maintype="application",
+                subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                filename=path_excel.name
+            )
 
-        destinatarios = MAIL_TO + MAIL_CC
-
-        try:
-            enviar_mail_o365(msg, MAIL_FROM, destinatarios)
-            print(f"✅ Mail enviado OK → {', '.join(destinatarios)}")
-        except Exception as e:
-            print(f"❌ Error enviando mail ({nombre_limpio}): {e}")
-
-
-
+    try:
+        enviar_mail_o365(msg, MAIL_FROM, destinatarios)
+        print(f"✅ Mail único enviado con {len(adjuntos)} adjuntos")
+    except Exception as e:
+        print(f"❌ Error enviando mail: {e}")
