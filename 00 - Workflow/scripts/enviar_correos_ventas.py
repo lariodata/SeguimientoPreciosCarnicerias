@@ -14,12 +14,15 @@ from dotenv import load_dotenv
 # =====================================================
 # RECIBIR FECHA DESDE VBA (YYYY-MM-DD)
 # =====================================================
-if len(sys.argv) < 2:
-    raise ValueError("❌ No se recibió la fecha desde Excel (se esperaba YYYY-MM-DD).")
-try:
-    FECHA_PROCESO = datetime.strptime(sys.argv[1], "%Y-%m-%d")
-except ValueError:
-    raise ValueError("❌ Formato de fecha inválido. Se esperaba YYYY-MM-DD (ej: 2026-02-14).")
+if len(sys.argv) >= 2:
+    try:
+        FECHA_PROCESO = datetime.strptime(sys.argv[1], "%Y-%m-%d")
+    except ValueError:
+        raise ValueError("❌ Formato de fecha inválido. Se esperaba YYYY-MM-DD (ej: 2026-02-14).")
+else:
+    # fallback para ejecución manual
+    FECHA_PROCESO = datetime.now()
+    print("⚠️ No se recibió fecha. Se usa fecha actual:", FECHA_PROCESO.strftime("%d/%m/%Y"))
 
 # Formatos derivados
 fecha_arch = FECHA_PROCESO.strftime("%d-%m-%Y")   # para nombres de archivo
@@ -189,7 +192,7 @@ def exportar_excel_ventas_xlwings(df: pd.DataFrame, base_path_excel: Path, nombr
     A1_POR_CLUSTER = {
         "CASILDA": "PubCAS",
         "RAFAELA": "PubRAF",
-        "MARIA LUISA": "PUBMAR",
+        "MARIA LUISA": "PUBMar",
         "MAYORISTAS": "MayRet",
         "HORECA": "MHOR",
     }
@@ -222,7 +225,7 @@ def exportar_excel_ventas_xlwings(df: pd.DataFrame, base_path_excel: Path, nombr
                 "Codigo": df_r[col_codigo],
                 "Precio": df_r[col_precio],
                 "Cero": 0.00,
-                "Fecha": FECHA_PROCESO,  # ✅ FECHA DESDE EXCEL (VBA)
+                "Fecha": "1/1/2019",  
             }
         )
 
