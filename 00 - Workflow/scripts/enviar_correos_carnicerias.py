@@ -11,19 +11,21 @@ from dotenv import load_dotenv
 
 import sys
 
-# =====================================================
-# RECIBIR FECHA DESDE VBA (YYYY-MM-DD)
-# =====================================================
-if len(sys.argv) < 2:
-    raise ValueError("❌ No se recibió la fecha desde Excel (se esperaba YYYY-MM-DD).")
 
-try:
-    FECHA_PROCESO = datetime.strptime(sys.argv[1], "%Y-%m-%d")
-except ValueError:
-    raise ValueError("❌ Formato de fecha inválido. Se esperaba YYYY-MM-DD (ej: 2026-02-14).")
+# =====================================================
+# RECIBIR FECHA DESDE VBA (YYYY-MM-DD) / FALLBACK MANUAL
+# =====================================================
+if len(sys.argv) >= 2 and sys.argv[1]:
+    try:
+        FECHA_PROCESO = datetime.strptime(sys.argv[1], "%Y-%m-%d")
+    except ValueError:
+        raise ValueError("❌ Formato de fecha inválido. Se esperaba YYYY-MM-DD (ej: 2026-02-14).")
+else:
+    FECHA_PROCESO = datetime.now()
+    print("⚠️ No se recibió fecha desde VBA. Se usa fecha actual.")
 
-fecha_arch = FECHA_PROCESO.strftime("%d-%m-%Y")   # para nombre archivo
-fecha_excel_str = FECHA_PROCESO.strftime("%d-%b").lower()  # para E2
+fecha_arch = FECHA_PROCESO.strftime("%d-%m-%Y")
+fecha_excel_str = FECHA_PROCESO.strftime("%d-%b").lower()
 
 
 # =====================================================
@@ -179,7 +181,6 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
     tabs = {"Carnes": "Carnes", "Fiambres": "Fiambres", "Reventa": "Dira"}
     fecha_hoy = fecha_excel_str
 
-    COLOR_CELESTE = 192 + (230 << 8) + (245 << 16)
     COLOR_ROJO_FONT = 255
     FORMATO_MONEDA = "$ #.##0"
 
@@ -190,10 +191,23 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
     col_sin_iva = find_col(df, ["sin iva"])
     col_precio = find_col(df, ["$"])
     col_unidad = find_col(df, ["unidad_me"])
+    col_vs_lista = find_col(df, ["VS LISTA ANTERIOR", "Vs lista anterior", "VS LISTA", "VS LISTA ANT"])
 
-    cols_out = [c for c in [col_rubro, col_tipo, col_cod, col_desc, col_sin_iva, col_precio, col_unidad] if c]
+    cols_out = [c for c in [col_rubro, col_tipo, col_cod, col_desc,
+                            col_sin_iva, col_precio, col_vs_lista, col_unidad] if c]
 
-    for nombre_tab, rubro in tabs.items():
+    # 👇 TOMAMOS LA HOJA INICIAL QUE CREA EXCEL
+    sht_base = wb_tmp.sheets[0]
+
+    for i, (nombre_tab, rubro) in enumerate(tabs.items()):
+
+        # 👇 Primera hoja: reutilizamos la inicial
+        if i == 0:
+            sht = sht_base
+            sht.name = nombre_tab
+        else:
+            sht = wb_tmp.sheets.add(nombre_tab, after=wb_tmp.sheets[-1])
+
         df_tab = df[df[col_rubro] == rubro].copy() if col_rubro else df.copy()
         df_tab = df_tab[cols_out].copy()
 
@@ -207,10 +221,27 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
         if col_precio:
             df_tab[col_precio] = pd.to_numeric(df_tab[col_precio], errors="coerce").round(0).astype("Int64")
 
-        sht = wb_tmp.sheets.add(nombre_tab)
+        # VS LISTA ANTERIOR
+        if col_vs_lista and col_vs_lista in df_tab.columns:
+            vs = df_tab[col_vs_lista]
 
+            vs_num = (
+                vs.astype(str)
+                  .str.replace("%", "", regex=False)
+                  .str.replace(",", ".", regex=False)
+            )
+
+            vs_num = pd.to_numeric(vs_num, errors="coerce")
+            vs_num = vs_num.where(vs_num.abs() <= 1, vs_num / 100)
+
+            df_tab[col_vs_lista] = vs_num
+
+        # ==============================
+        # ESCRIBIR EN EXCEL
+        # ==============================
         sht.range("C2").value = f"LISTA {nombre_cluster}"
         sht.range("C2").api.Font.Bold = True
+
         sht.range("E2").value = fecha_hoy
         sht.range("E2").api.Font.Bold = True
 
@@ -221,7 +252,9 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
 
         last_row = 4 + len(df_tab)
 
-        # Formato moneda
+        # ==============================
+        # FORMATO MONEDA
+        # ==============================
         for col_name in [col_sin_iva, col_precio]:
             if col_name in headers:
                 pos = headers.index(col_name) + 1
@@ -232,18 +265,43 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
                     if val is not None and str(int(val)).endswith("99"):
                         sht.range((r, pos)).api.Font.Color = COLOR_ROJO_FONT
 
-        # Pintar unidad_me
-        if col_unidad in headers:
-            pos_um = headers.index(col_unidad) + 1
-            for i, v in enumerate(df_tab[col_unidad]):
-                if pd.to_numeric(v, errors="coerce") == 1:
-                    sht.range((5 + i, 1), (5 + i, len(headers))).api.Interior.Color = COLOR_CELESTE
-            sht.range((4, pos_um), (last_row, pos_um)).api.EntireColumn.Hidden = True
+        # ==============================
+        # FORMATO VS LISTA ANTERIOR
+        # ==============================
+        if col_vs_lista in headers:
+            pos_vs = headers.index(col_vs_lista) + 1
+            sht.range((5, pos_vs), (last_row, pos_vs)).api.NumberFormat = "0,00%"
+
+            COLOR_ROJO = 255
+            COLOR_VERDE = 5287936
+            COLOR_NEGRO = 0
+
+            for j, val in enumerate(df_tab[col_vs_lista]):
+                try:
+                    if pd.notna(val):
+                        fila_excel = 5 + j
+                        celda = sht.range((fila_excel, pos_vs)).api
+
+                        celda.Font.Bold = False
+
+                        valor = float(val)
+
+                    if valor < 0:
+                        celda.Font.Color = COLOR_ROJO
+                        celda.Font.Bold = True
+
+                    elif valor > 0:
+                        celda.Font.Color = COLOR_VERDE
+                        celda.Font.Bold = True
+
+                    else:
+                        celda.Font.Color = COLOR_NEGRO
+                        celda.Font.Bold = False
+
+                except Exception:
+                    pass
 
         sht.autofit()
-
-    if "Sheet1" in [s.name for s in wb_tmp.sheets]:
-        wb_tmp.sheets["Sheet1"].delete()
 
     wb_tmp.save(str(path_excel))
     wb_tmp.close()
