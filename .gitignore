@@ -29,3 +29,6 @@ env/
 # Carpeta Temp
 temp/
 00 - Workflow/temp/
+
+# Carpeta de backups
+bkp/

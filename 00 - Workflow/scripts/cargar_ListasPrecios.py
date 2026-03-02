@@ -17,7 +17,7 @@ else:
 if len(sys.argv) > 2 and sys.argv[2].isdigit():    
     ID_LISTA = int(sys.argv[2])    
 else:
-    ID_LISTA = 16   # fallback por defecto
+    ID_LISTA = 2   # fallback por defecto
     print("⚠️ ID_LISTA no recibido, se usa valor por defecto: 16")
 
 
@@ -42,7 +42,8 @@ MAPA_HOJAS = {
     23: "Listas anteriores ML",
     17: "Listas anteriores C",
     28: "Listas anteriores May.",
-    29: "Listas anteriores HORECA"
+    29: "Listas anteriores HORECA",
+    2: "Listas anteriores ER"
 }
 
 if ID_LISTA not in MAPA_HOJAS:
@@ -233,7 +234,7 @@ try:
             continue
 
         # 👉 CONDICIÓN REAL DE LISTAS
-        if "1-UNIT" in txt:
+        if txt.startswith("1-"):
             # pintar solo columnas descriptivas
             sht.range((r, 1), (r, 4)).api.Interior.Color = color_celeste
 
