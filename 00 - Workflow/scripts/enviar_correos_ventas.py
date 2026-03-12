@@ -183,6 +183,9 @@ def leer_tabla_cluster(sht, col_inicio: int, col_fin: int, fila_header: int) -> 
 # EXPORTAR EXCEL – VENTAS
 # =====================================================
 def exportar_excel_ventas_xlwings(df: pd.DataFrame, base_path_excel: Path, nombre_cluster: str) -> list[Path]:
+
+    from datetime import datetime
+
     RUBROS = {
         "Carnes": "CARNES",
         "Fiambres": "FIAMBRES",
@@ -192,7 +195,7 @@ def exportar_excel_ventas_xlwings(df: pd.DataFrame, base_path_excel: Path, nombr
     A1_POR_CLUSTER = {
         "CASILDA": "PubCAS",
         "RAFAELA": "PubRAF",
-        "MARIA LUISA": "PUBMar",
+        "MARIA LUISA": "PubMAR",
         "MAYORISTAS": "MayRet",
         "HORECA": "MHOR",
     }
@@ -210,11 +213,11 @@ def exportar_excel_ventas_xlwings(df: pd.DataFrame, base_path_excel: Path, nombr
     cluster_norm = nombre_cluster.upper().replace("CLUSTER", "").strip()
 
     for nombre_rubro, rubro in RUBROS.items():
+
         df_r = df[df[col_rubro] == rubro].copy()
         if df_r.empty:
             continue
 
-        # precio numérico + filtro != 0
         df_r[col_precio] = pd.to_numeric(df_r[col_precio], errors="coerce")
         df_r = df_r[df_r[col_precio].notna() & (df_r[col_precio] != 0)]
         if df_r.empty:
@@ -225,29 +228,56 @@ def exportar_excel_ventas_xlwings(df: pd.DataFrame, base_path_excel: Path, nombr
                 "Codigo": df_r[col_codigo],
                 "Precio": df_r[col_precio],
                 "Cero": 0.00,
-                "Fecha": "1/1/2019",  
             }
         )
 
-        # ===== NUEVO EXCEL POR RUBRO =====
+        # ============================
+        # NUEVO EXCEL
+        # ============================
+
         app_tmp = xw.App(visible=False)
         app_tmp.api.DisplayAlerts = False
 
         try:
+
             wb_tmp = app_tmp.books.add()
             sht = wb_tmp.sheets[0]
             sht.name = nombre_rubro
 
+            # valor identificador en A1
             sht.range("A1").value = A1_POR_CLUSTER.get(cluster_norm, "")
+
+            # escribir dataframe
             sht.range("A2").options(index=False, header=False).value = df_out
 
             last_row = 1 + len(df_out)
+
             if last_row >= 2:
+
+                # formato números
                 sht.range((2, 2), (last_row, 2)).api.NumberFormat = "#.##0,00"
                 sht.range((2, 3), (last_row, 3)).api.NumberFormat = "0,00"
-                sht.range((2, 4), (last_row, 4)).api.NumberFormat = "dd/mm/aaaa"
 
-            sht.autofit()
+                # fecha fija
+                fecha_fija = datetime(2019, 1, 1)
+
+                sht.range((2, 4), (last_row, 4)).value = [
+                    [fecha_fija] for _ in range(len(df_out))
+                ]
+
+                # Serial de Excel para 01/01/2019
+                fecha_str = "1/1/2019"
+
+                rango_fecha = sht.range((2,4),(last_row,4))
+
+                # forzar formato texto
+                rango_fecha.api.NumberFormat = "@"
+
+                # escribir texto
+                rango_fecha.value = [[fecha_str] for _ in range(len(df_out))]
+                                                                                
+
+            sht.autofit() 
 
             path_excel = base_path_excel.with_name(
                 f"{base_path_excel.stem}_{nombre_rubro}{base_path_excel.suffix}"
@@ -267,7 +297,6 @@ def exportar_excel_ventas_xlwings(df: pd.DataFrame, base_path_excel: Path, nombr
             app_tmp.quit()
 
     return archivos_generados
-
 
 # =====================================================
 # PROCESO PRINCIPAL

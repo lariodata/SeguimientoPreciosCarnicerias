@@ -70,11 +70,33 @@ try:
     # ================================
     # 4. ORDEN CLUSTER → COMPETENCIA
     # ================================
+
+
+    orden_personalizado = [
+        "Rafaela",
+        "Casilda",
+        "Maria Luisa",
+        "Mayorista",
+        "Estancia Rafaela"
+    ]
+
     orden_cols = (
         df_comp[["cluster", "competencia"]]
-        .drop_duplicates()
-        .sort_values(["cluster", "competencia"])
+            .drop_duplicates()
     )
+
+    # Crear índice de orden basado en la lista
+    orden_cols["orden_cluster"] = orden_cols["cluster"].apply(
+        lambda x: orden_personalizado.index(x)
+        if x in orden_personalizado else 999
+    )
+
+    orden_cols = orden_cols.sort_values(
+        ["orden_cluster", "competencia"]
+    )
+
+    clusters = orden_cols["cluster"].tolist()
+    competencias = orden_cols["competencia"].tolist()
 
     clusters = orden_cols["cluster"].tolist()
     competencias = orden_cols["competencia"].tolist()
