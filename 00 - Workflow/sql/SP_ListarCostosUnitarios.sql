@@ -84,6 +84,9 @@ SELECT
         WHEN p.UNIDAD_ME = 0 THEN
             cs.COSTO
 
+        WHEN p.UNIDAD_ME = 1 AND p.TIPO_ART = 'D' THEN
+            cs.COSTO
+
         WHEN p.UNIDAD_ME = 1 THEN
             cs.COSTO * ISNULL(conv.resultado,0)
 

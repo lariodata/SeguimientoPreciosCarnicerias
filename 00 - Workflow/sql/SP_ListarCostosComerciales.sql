@@ -33,7 +33,10 @@ SELECT DISTINCT TOP (@CantidadSemanas)
 FROM DW.dbo.FacFacturacion f
 INNER JOIN DW.dbo.DimTime dt
     ON dt.TimeKey = f.clave_fecha_fact
+INNER JOIN DW.dbo.DimCliente dc
+    ON f.id_dimcliente = dc.ID
 WHERE (f.anulada IS NULL OR f.anulada = 0)
+  AND dc.NROREP IN (196, 336, 240, 762, 763)
 ORDER BY
     dt.CalendarYear DESC,
     dt.WeekNumberOfYear DESC
@@ -99,10 +102,14 @@ INNER JOIN UltimasSemanas s
     ON s.CalendarYear = dt.CalendarYear
    AND s.WeekNumberOfYear = dt.WeekNumberOfYear
 
+INNER JOIN DW.dbo.DimCliente dc
+    ON f.id_dimcliente = dc.ID
+
 LEFT JOIN DW.dbo.DimClasificacionComprobante clasif
     ON f.ID_TIPO_COMPROBANTE = clasif.ID_TIPO_COMPROBANTE
 
 WHERE (f.anulada IS NULL OR f.anulada = 0)
+  AND dc.NROREP IN (196, 336, 240, 762, 763)
 
 GROUP BY
     dt.CalendarYear,
@@ -117,7 +124,7 @@ GROUP BY
 SELECT
     CalendarYear,
     WeekNumberOfYear,
-    COD_ART,
+    ComercialAgg.COD_ART,
     ManoObraDespacho,
     CostoFlete,
     CostoAcarreos,
@@ -156,6 +163,22 @@ SELECT
 
     CASE
         WHEN KgsClasif1 = 0 THEN NULL
+
+        WHEN p.UNIDAD_ME = 1 AND p.TIPO_ART = 'D' THEN
+        (
+            ManoObraDespacho
+          + CostoFlete
+          + CostoAcarreos
+          + ComisionVentas
+          + ComisionCobranzas
+          + DescuentoComisiones
+          + CostoRepositoras
+          + AcuerdosFijos
+          + Fortalecimiento
+          + Impuestos
+          - NcFinancieras
+        ) / NULLIF(KgsClasif1,0) * ISNULL(p.K_BRU_BUL,1)
+
         ELSE
         (
             ManoObraDespacho
@@ -174,9 +197,12 @@ SELECT
 
 FROM ComercialAgg
 
+LEFT JOIN DW.dbo.DimProducto p
+    ON p.COD_ART = ComercialAgg.COD_ART
+
 ORDER BY
     CalendarYear DESC,
     WeekNumberOfYear DESC,
-    COD_ART;
+    ComercialAgg.COD_ART;
 
 END
