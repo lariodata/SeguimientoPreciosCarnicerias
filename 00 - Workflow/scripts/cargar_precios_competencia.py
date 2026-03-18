@@ -135,6 +135,18 @@ try:
     df_pivot = df_pivot.replace({np.nan: ""})
 
     # ================================
+    # 7B. OBTENER FECHAS DE MODIFICACIÓN
+    # ================================
+    query_fechas = """
+    SELECT DISTINCT competencia, fecha_modificacion
+    FROM dbo.Lista_Precios_Competencia
+    WHERE fecha_modificacion IS NOT NULL
+    ORDER BY competencia
+    """
+    df_fechas = pd.read_sql(query_fechas, conn)
+    fecha_map = dict(zip(df_fechas["competencia"], df_fechas["fecha_modificacion"]))
+
+    # ================================
     # 8. EXCEL
     # ================================
     app = xw.apps.active
@@ -157,9 +169,24 @@ try:
     sht.range("A1").api.Font.Bold = True
 
     # ================================
-    # 10. FILA 4 → CLUSTERS
+    # 9B. FILA 3 → FECHAS DE MODIFICACIÓN
     # ================================
     col_ini = len(columnas_fijas) + 1
+
+    sht.range("D3").value = "Fecha de Modificación ->"
+    sht.range("D3").api.Font.Bold = True
+
+    for col_idx, competencia in enumerate(competencias):
+        col = col_ini + col_idx
+        fecha = fecha_map.get(competencia)
+        if fecha:
+            # Convertir fecha a string para evitar problemas de formato
+            fecha_str = fecha.strftime("%d/%m/%Y") if hasattr(fecha, 'strftime') else str(fecha)
+            sht.range((3, col)).value = fecha_str
+
+    # ================================
+    # 10. FILA 4 → CLUSTERS
+    # ================================
     i = 0
     col = col_ini
 
@@ -183,8 +210,9 @@ try:
         sht.range((4, col_inicio), (4, col_fin)).api.Interior.Color = color
 
         sht.range((5, col_inicio), (5, col_fin)).api.Interior.Color = color
+        sht.range((3, col_inicio), (3, col_fin)).api.Interior.Color = color
 
-        bloque = sht.range((4, col_inicio), (5, col_fin)).api
+        bloque = sht.range((3, col_inicio), (5, col_fin)).api
         for borde in [
             xwc.BordersIndex.xlEdgeLeft,
             xwc.BordersIndex.xlEdgeRight,
@@ -210,13 +238,13 @@ try:
     # ================================
     # 12. FORMATO MONEDA
     # ================================
-    ultima_fila = sht.range("A5").current_region.last_cell.row
-    ultima_col = sht.range("A5").current_region.last_cell.column
+    ultima_fila = sht.range("A6").current_region.last_cell.row
+    ultima_col = sht.range("A6").current_region.last_cell.column
 
     for c in range(col_ini, ultima_col + 1):
         sht.range((6, c), (ultima_fila, c)).api.NumberFormat = "$ #.##0"
 
-    sht.range("A5").current_region.api.EntireColumn.AutoFit()
+    sht.range("A3").current_region.api.EntireColumn.AutoFit()
 
     wb.save()
 

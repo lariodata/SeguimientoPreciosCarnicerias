@@ -173,6 +173,30 @@ def leer_tabla_cluster(sht, col_inicio, col_fin, fila_header):
 # =====================================================
 # EXPORTAR EXCEL
 # =====================================================
+
+LOGO_PATH = BASE_DIR.parent / "logo_ra.png"
+CM_TO_POINTS = 28.3465
+LOGO_HEIGHT_PT = 1.67 * CM_TO_POINTS   # 47.3 pt
+LOGO_WIDTH_PT  = 2.96 * CM_TO_POINTS   # 83.9 pt
+
+DATA_START_ROW = 6
+HEADER_ROW     = 5
+LOGO_ROW_COUNT = 3   # filas 1-3 suman el alto del logo
+
+# xlConstants alineación
+XL_ALIGN_CENTER = -4108
+XL_ALIGN_LEFT   = -4131
+
+# xlConstants para bordes
+XL_EDGE_LEFT       = 7
+XL_EDGE_TOP        = 8
+XL_EDGE_BOTTOM     = 9
+XL_EDGE_RIGHT      = 10
+XL_INSIDE_VERTICAL = 11
+XL_INSIDE_HORIZ    = 12
+XL_CONTINUOUS      = 1
+XL_THIN            = 2
+
 def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
     app_tmp = xw.App(visible=False)
     app_tmp.api.DisplayAlerts = False
@@ -196,12 +220,10 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
     cols_out = [c for c in [col_rubro, col_tipo, col_cod, col_desc,
                             col_sin_iva, col_precio, col_vs_lista, col_unidad] if c]
 
-    # 👇 TOMAMOS LA HOJA INICIAL QUE CREA EXCEL
     sht_base = wb_tmp.sheets[0]
 
     for i, (nombre_tab, rubro) in enumerate(tabs.items()):
 
-        # 👇 Primera hoja: reutilizamos la inicial
         if i == 0:
             sht = sht_base
             sht.name = nombre_tab
@@ -236,8 +258,26 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
 
             df_tab[col_vs_lista] = vs_num
 
+        headers = df_tab.columns.tolist()
+        last_row = DATA_START_ROW + len(df_tab) - 1
+
         # ==============================
-        # ESCRIBIR EN EXCEL
+        # LOGO EN A1 (filas 1-3 suman el alto total)
+        # ==============================
+        row_h = LOGO_HEIGHT_PT / LOGO_ROW_COUNT
+        for r in range(1, LOGO_ROW_COUNT + 1):
+            sht.api.Rows(r).RowHeight = row_h
+        if LOGO_PATH.exists():
+            sht.pictures.add(
+                str(LOGO_PATH),
+                left=sht.range("A1").left,
+                top=sht.range("A1").top,
+                width=LOGO_WIDTH_PT,
+                height=LOGO_HEIGHT_PT,
+            )
+
+        # ==============================
+        # TÍTULO Y FECHA
         # ==============================
         sht.range("C2").value = f"LISTA {nombre_cluster}"
         sht.range("C2").api.Font.Bold = True
@@ -245,12 +285,20 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
         sht.range("E2").value = fecha_hoy
         sht.range("E2").api.Font.Bold = True
 
-        headers = df_tab.columns.tolist()
-        sht.range("A4").value = headers
-        sht.range("A4").expand("right").api.Font.Bold = True
-        sht.range("A5").options(index=False, header=False).value = df_tab
+        # ==============================
+        # ENCABEZADO (fondo negro, letra blanca, centrado)
+        # ==============================
+        sht.range((HEADER_ROW, 1)).value = headers
+        header_rng = sht.range((HEADER_ROW, 1), (HEADER_ROW, len(cols_out)))
+        header_rng.color = (0, 0, 0)
+        header_rng.api.Font.Color = 0xFFFFFF
+        header_rng.api.Font.Bold = True
+        header_rng.api.HorizontalAlignment = XL_ALIGN_CENTER
 
-        last_row = 4 + len(df_tab)
+        # ==============================
+        # DATOS
+        # ==============================
+        sht.range((DATA_START_ROW, 1)).options(index=False, header=False).value = df_tab
 
         # ==============================
         # FORMATO MONEDA
@@ -258,9 +306,9 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
         for col_name in [col_sin_iva, col_precio]:
             if col_name in headers:
                 pos = headers.index(col_name) + 1
-                sht.range((5, pos), (last_row, pos)).api.NumberFormat = FORMATO_MONEDA
+                sht.range((DATA_START_ROW, pos), (last_row, pos)).api.NumberFormat = FORMATO_MONEDA
 
-                for r in range(5, last_row + 1):
+                for r in range(DATA_START_ROW, last_row + 1):
                     val = sht.range((r, pos)).value
                     if val is not None and str(int(val)).endswith("99"):
                         sht.range((r, pos)).api.Font.Color = COLOR_ROJO_FONT
@@ -270,7 +318,7 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
         # ==============================
         if col_vs_lista in headers:
             pos_vs = headers.index(col_vs_lista) + 1
-            sht.range((5, pos_vs), (last_row, pos_vs)).api.NumberFormat = "0,00%"
+            sht.range((DATA_START_ROW, pos_vs), (last_row, pos_vs)).api.NumberFormat = "0,00%"
 
             COLOR_ROJO = 255
             COLOR_VERDE = 5287936
@@ -279,7 +327,7 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
             for j, val in enumerate(df_tab[col_vs_lista]):
                 try:
                     if pd.notna(val):
-                        fila_excel = 5 + j
+                        fila_excel = DATA_START_ROW + j
                         celda = sht.range((fila_excel, pos_vs)).api
 
                         celda.Font.Bold = False
@@ -301,6 +349,38 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
                 except Exception:
                     pass
 
+        # ==============================
+        # ALINEACIÓN COLUMNAS DE DATOS
+        # ==============================
+        pos_desc = headers.index(col_desc) + 1 if col_desc and col_desc in headers else None
+        for col_idx in range(1, len(cols_out) + 1):
+            col_rng = sht.range((DATA_START_ROW, col_idx), (last_row, col_idx))
+            if col_idx == pos_desc:
+                col_rng.api.HorizontalAlignment = XL_ALIGN_LEFT
+            else:
+                col_rng.api.HorizontalAlignment = XL_ALIGN_CENTER
+
+        # ==============================
+        # FILL GRIS + NEGRITA EN Rubro y Tipo
+        # ==============================
+        for col_name in [col_rubro, col_tipo]:
+            if col_name and col_name in headers:
+                pos = headers.index(col_name) + 1
+                rng = sht.range((DATA_START_ROW, pos), (last_row, pos))
+                rng.color = (217, 217, 217)
+                rng.api.Font.Bold = True
+
+        # ==============================
+        # BORDES FINOS NEGROS EN TODA LA TABLA
+        # ==============================
+        if len(df_tab) > 0:
+            tabla_rng = sht.range((DATA_START_ROW, 1), (last_row, len(cols_out)))
+            for edge in [XL_EDGE_LEFT, XL_EDGE_TOP, XL_EDGE_BOTTOM, XL_EDGE_RIGHT,
+                         XL_INSIDE_VERTICAL, XL_INSIDE_HORIZ]:
+                tabla_rng.api.Borders(edge).LineStyle = XL_CONTINUOUS
+                tabla_rng.api.Borders(edge).Weight = XL_THIN
+                tabla_rng.api.Borders(edge).Color = 0  # negro
+
         sht.autofit()
 
     wb_tmp.save(str(path_excel))
@@ -311,7 +391,9 @@ def exportar_excel_precios_xlwings(df, path_excel, nombre_cluster):
 # PROCESO PRINCIPAL
 # =====================================================
 
-adjuntos = []
+# -- Pasada 1: leer todos los clusters y construir tipo_map desde el que tenga "Tipo"
+cluster_data = []
+tipo_map = {}
 
 for c in clusters:
     fila_header = buscar_fila_encabezado(sht_clusters, c["col_inicio"])
@@ -327,6 +409,32 @@ for c in clusters:
 
     if df_cluster.empty:
         continue
+
+    cluster_data.append((c, df_cluster))
+
+    # Tomar tipo_map del primer cluster que tenga "Tipo" y "Cód."
+    if not tipo_map:
+        _col_tipo = find_col(df_cluster, ["Tipo"])
+        _col_cod  = find_col(df_cluster, ["Cód.", "Cod", "Código"])
+        if _col_tipo and _col_cod:
+            tipo_map = (
+                df_cluster[[_col_cod, _col_tipo]]
+                .dropna(subset=[_col_cod])
+                .drop_duplicates(subset=[_col_cod])
+                .set_index(_col_cod.strip() if hasattr(_col_cod, "strip") else _col_cod)[_col_tipo]
+                .to_dict()
+            )
+
+# -- Pasada 2: completar "Tipo" en los que no la tienen y exportar
+adjuntos = []
+
+for c, df_cluster in cluster_data:
+    _col_tipo = find_col(df_cluster, ["Tipo"])
+    _col_cod  = find_col(df_cluster, ["Cód.", "Cod", "Código"])
+
+    if _col_tipo is None and _col_cod and tipo_map:
+        df_cluster = df_cluster.copy()
+        df_cluster["Tipo"] = df_cluster[_col_cod].map(tipo_map).fillna("")
 
     nombre_limpio = safe_filename(c["nombre"].replace("CLUSTER", "").strip())
     path_excel = TEMP_DIR / f"Precios_{nombre_limpio}_{fecha_arch}.xlsx"

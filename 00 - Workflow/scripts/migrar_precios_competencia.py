@@ -2,10 +2,16 @@ import sys
 import pandas as pd
 import pyodbc
 import shutil
-import os
 from datetime import datetime
 from pathlib import Path
 from decimal import Decimal
+
+# =====================================================
+# RUTA BASE
+# =====================================================
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+BASE_DIR = SCRIPT_DIR.parent
 
 # =====================================================
 # ARCHIVO EXCEL (VBA o Default local)
@@ -15,7 +21,7 @@ if len(sys.argv) >= 2:
     archivo_excel = Path(sys.argv[1]).resolve()
     print("📂 Archivo recibido desde VBA:", archivo_excel)
 else:
-    archivo_excel = Path.home() / "Downloads" / "Template_Competencias.xlsx"
+    archivo_excel = BASE_DIR / "Template_Competencias.xlsx"
     print("⚠ No se recibió archivo desde VBA. Usando ruta local:")
     print("📂", archivo_excel)
 
@@ -127,15 +133,11 @@ try:
     # COPIAR A TEMP
     # -------------------------------------------------
 
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    PROJECT_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
-    TEMP_DIR = os.path.join(PROJECT_DIR, "temp")
-    os.makedirs(TEMP_DIR, exist_ok=True)
+    PROJECT_DIR = BASE_DIR.parent
+    TEMP_DIR = PROJECT_DIR / "temp"
+    TEMP_DIR.mkdir(exist_ok=True)
 
-    archivo_tmp = os.path.join(
-        TEMP_DIR,
-        f"Template_Competencias_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-    )
+    archivo_tmp = TEMP_DIR / f"Template_Competencias_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 
     shutil.copy2(archivo_excel, archivo_tmp)
 
@@ -153,10 +155,35 @@ try:
 
         print(f"Procesando hoja: {hoja}")
 
+        # Leer fila de fechas (fila 2 Excel = índice 1) y encabezados (fila 3 = índice 2)
+        df_raw = pd.read_excel(
+            archivo_tmp,
+            sheet_name=hoja,
+            header=None,
+            nrows=3,
+            engine="openpyxl"
+        )
+        date_row    = df_raw.iloc[1]
+        header_row  = df_raw.iloc[2]
+
+        # Mapa: nombre_competencia -> fecha_modificacion
+        fecha_map = {}
+        for col_idx, col_name in enumerate(header_row):
+            if pd.notna(col_name) and str(col_name).strip() not in ("Código", "Descripción"):
+                fecha_val = date_row.iloc[col_idx]
+                if pd.notna(fecha_val):
+                    if isinstance(fecha_val, datetime):
+                        fecha_map[str(col_name).strip()] = fecha_val.date()
+                    else:
+                        try:
+                            fecha_map[str(col_name).strip()] = pd.to_datetime(fecha_val, dayfirst=True).date()
+                        except Exception:
+                            fecha_map[str(col_name).strip()] = None
+
         df = pd.read_excel(
             archivo_tmp,
             sheet_name=hoja,
-            header=1,
+            header=2,
             engine="openpyxl"
         )
 
@@ -210,6 +237,10 @@ try:
         for _, row in df_melt.iterrows():
 
             precio = parse_precio(row["precio"])
+            fecha_mod = fecha_map.get(str(row["competencia"]).strip())
+            # Convertir date a string ISO para SQL
+            if fecha_mod:
+                fecha_mod = fecha_mod.isoformat()
 
             inserts.append((
                 int(row["cod_art"]),
@@ -217,7 +248,8 @@ try:
                 row["competencia"],
                 precio,
                 anio,
-                semana
+                semana,
+                fecha_mod
             ))
 
     # -------------------------------------------------
@@ -226,7 +258,7 @@ try:
 
     if inserts:
         df_insert = pd.DataFrame(inserts, columns=[
-            "cod_art", "cluster", "competencia", "precio", "anio", "semana"
+            "cod_art", "cluster", "competencia", "precio", "anio", "semana", "fecha_modificacion"
         ])
 
         # Eliminar duplicados conservando el último valor
@@ -240,8 +272,8 @@ try:
     if inserts:
         cursor.executemany("""
             INSERT INTO dbo.Lista_Precios_Competencia
-            (cod_art, cluster, competencia, precio, anio, semana)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (cod_art, cluster, competencia, precio, anio, semana, fecha_modificacion)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """, inserts)
 
         conn.commit()
@@ -258,7 +290,7 @@ except Exception as e:
 finally:
     try:
         xls.close()
-        os.remove(archivo_tmp)
+        archivo_tmp.unlink()
     except:
         pass
 

@@ -58,7 +58,11 @@ pip install -r requirements.txt
 - `pywin32` — Windows COM support (required by xlwings)
 
 ### Running Scripts
+#### Comment folder scripts
+In the folder scripts we have all files with process scrits that are called from excel file "WFW_SCP". This excel file contain the app with the workflow. For example: @cargar_costos is called from the workflo to get the unit costs.
 
+**Script naming clarification:**
+- `cargar_ListasPrecios.py` is referred to as **"listado"** or **"listas de precios"** in conversations
 Scripts are normally invoked from VBA but can be run manually:
 
 ```bash
@@ -98,3 +102,5 @@ Avances/                 # Weekly progress presentations (.pptx)
 - SQL Server connection details are hardcoded in most scripts (server: `lariosql70`, DB: `DW`). Only the ETL script uses `ConnectionFactory` from the external core package.
 - The email scripts read recipient addresses and mail parameters from the "Parametros" sheet in the workbook (different cell ranges for each mail type).
 - Cluster definitions (Rafaela, Casilda, Maria Luisa, Mayorista, HORECA, Estancia Rafaela) are business-domain groupings used throughout the system.
+
+
