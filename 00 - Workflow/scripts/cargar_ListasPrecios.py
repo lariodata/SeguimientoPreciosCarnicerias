@@ -43,7 +43,8 @@ MAPA_HOJAS = {
     17: "Listas anteriores C",
     28: "Listas anteriores May.",
     29: "Listas anteriores HORECA",
-    2: "Listas anteriores ER"
+    2: "Listas anteriores ER",
+    164: "Lista Base Porcino"
 }
 
 if ID_LISTA not in MAPA_HOJAS:
